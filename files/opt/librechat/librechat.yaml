@@ -1,0 +1,41 @@
+# LibreChat カスタムエンドポイント定義 (v0.8.8)
+#
+# - OPENAI_API_BASE は廃止済み (.env 側に書いても無視される)。自前 LLM エンドポイントはここで登録する
+# - baseOptions: は無い。baseURL を直書きする
+# - provider: は anthropic 専用 (OpenAI 互換では省略)
+# - models.default は必須。無いと黙ってフィルタで落ちる。fetch: true で /models から一覧取得
+# - 反映には sudo systemctl restart librechat
+#
+# 下は OpenAI 互換エンドポイントの例。接続先に合わせてコメントを解除して書き換える
+# (未設定のままでも起動するが、チャットには使えるエンドポイントが必要になる)
+
+version: 1.3.17
+
+# endpoints:
+#   custom:
+#     - name: "example"
+#       apiKey: "unused"
+#       baseURL: "http://llm.example.com:8080/v1"
+#       models:
+#         default:
+#           - example-model
+#         fetch: true
+#       # 実ウィンドウが内蔵テーブルの推定と食い違う場合は tokenConfig で宣言する
+#       # (prompt/completion は百万トークン単価。不要なら 0)
+#       tokenConfig:
+#         example-model:
+#           prompt: 0
+#           completion: 0
+#           context: 262144
+
+# 会話単位で上書きしたいだけなら modelSpecs の preset (maxContextTokens) でもよい
+# modelSpecs:
+#   enforce: false
+#   prioritize: true
+#   list:
+#     - name: "example-256k"
+#       label: "Example (256K window)"
+#       preset:
+#         endpoint: "example"
+#         model: "example-model"
+#         maxContextTokens: 250000

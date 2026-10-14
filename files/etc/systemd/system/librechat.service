@@ -1,0 +1,23 @@
+[Unit]
+Description=LibreChat (Node.js chat server)
+Documentation=https://www.librechat.ai/
+After=network-online.target mongodb.service
+Wants=network-online.target mongodb.service
+
+[Service]
+Type=simple
+User=librechat
+Group=librechat
+WorkingDirectory=/opt/librechat
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/librechat/.env
+# 初回起動時に .env (永続シークレット込み) を生成する。既存なら何もしない。
+ExecStartPre=/usr/lib/librechat/gen-env.sh
+# npm run backend は cross-env を挟むが、cross-env は dev 依存なので prune 後には無い。
+# NODE_ENV は上で直接設定して node を直接起動する。
+ExecStart=/usr/bin/node api/server/index.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

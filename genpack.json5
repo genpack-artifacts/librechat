@@ -1,0 +1,70 @@
+{
+    name: "librechat",
+    profile: "paravirt",
+    compression: "xz",
+
+    packages: [
+        "genpack/paravirt",
+
+        // バックエンド実行時 (api/server/index.js)。フロントビルドにも使う。
+        // LibreChat の package.json に engines 制限はなく node 26 系で検証済み。
+        "net-libs/nodejs",
+
+        // LibreChat の唯一の必須外部サービス。7 系は amd64 安定 (8 系は ~amd64 で
+        // accept_keywords 追加要)。ebuild が mongodb.service を同梱し、
+        // acct-user/acct-group/mongodb を RDEPEND に持つ。
+        "=dev-db/mongodb-7*",
+
+        // librechat ユーザーに NOPASSWD でサービス再起動をさせる (files/etc/sudoers.d)。
+        // genpack/base プロファイルには含まれないので明示的に立てる。
+        "app-admin/sudo",
+    ],
+
+    buildtime_packages: [
+        "dev-vcs/git", // リリースタグのシャロークローン
+
+        // mongodb-7.0.28 の SConstruct が "from pkg_resources import parse_version" を使うが
+        // ebuild の BDEPEND に入っていない (setuptools 81 で pkg_resources が別パッケージに分離)。
+        // 8 系は dev-python/packaging を BDEPEND に持つのでこの問題は出ない。
+        "dev-python/pkg-resources",
+    ],
+
+    // 上の pkg-resources は mongodb にとって宣言依存ではないため、一括 emerge では
+    // mongodb の compile に間に合わない (ADR-0003 の clang-kernel と同型の問題)。
+    // @genpack-buildtime を先行パスで焼いてからメイン emerge に入る。
+    buildtime_packages_first: true,
+
+    // ref: exec-guard
+    // overlayfs upper layer に持ち込まれた ELF バイナリ・共有ライブラリの実行を eBPF LSM でブロック。
+    // /opt/librechat (node_modules のネイティブアドオン含む) は SquashFS lower 側なので実行に影響しない。
+    // clang / bpftool は genpack-overlay の ebuild が自動依存。無効化は system.ini の `exec_guard = false`。
+    use: {
+        "sys-apps/genpack-init": "exec-guard",
+    },
+
+    accept_keywords: {
+        // net-libs/nodejs は Portage ツリーで全て ~amd64
+        "net-libs/nodejs": null,
+    },
+
+    license: {
+        // mongodb の LICENSE="Apache-2.0 SSPL-1"
+        "dev-db/mongodb": "SSPL-1",
+    },
+
+    arch: {
+        aarch64: {
+            // mongodb 7 系は arm64 で ~arch (amd64 のみ安定)
+            accept_keywords: {
+                "dev-db/mongodb": null,
+            },
+        },
+    },
+
+    users: [
+        // 設定編集やサービス再起動をこのユーザーで行う運用 (sudoers で部分特権)
+        { name: "librechat", uid: 1000, home: "/var/lib/librechat", shell: "/bin/bash" },
+    ],
+
+    services: ["mongodb", "librechat"],
+}

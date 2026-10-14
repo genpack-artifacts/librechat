@@ -1,0 +1,3 @@
+# LibreChat サービスの部分的管理 (パスワード不要)
+# モード 0440 が必須。git は 0440 を保持できないので files/build.d/librechat.sh で整える。
+librechat ALL=(root) NOPASSWD: /usr/bin/systemctl restart librechat, /usr/bin/systemctl restart mongodb, /usr/bin/systemctl status librechat, /usr/bin/systemctl status mongodb

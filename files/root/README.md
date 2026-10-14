@@ -74,3 +74,83 @@ ls /opt/librechat/logs        # error-YYYY-MM-DD.log
   アクセスする
 - 実行保護 exec-guard が有効。状態は `grep exec_guard /var/log/genpack-init.log`、
   ブロックされた実行は `ausearch -k exec_guard_deny --input-logs` に残る
+
+## 6. メモリ
+
+2GB 割り当て (swap なし) での実測: node 431 MB (ピーク 496 MB) / mongod 180 MB /
+VM 全体 used 729 MB・available 1217 MB。`free` の buff/cache はページキャッシュで回収される。
+1ユーザーの通常利用なら 2GB で足りる。
+
+ただし上限が宣言されていない箇所がある。小さい VM では宣言しておく:
+
+```sh
+# /etc/systemd/system/librechat.service の Environment= に追記
+NODE_OPTIONS=--max-old-space-size=1024
+```
+
+```yaml
+# /etc/mongodb.conf
+storage:
+    wiredTiger:
+        collectionConfig:
+            cacheSizeGB: 0.5
+```
+
+WiredTiger の既定キャッシュは `(RAM - 1GB) * 0.5 + 1GB` で、2GB では約 1.5GB になる
+(今はデータが小さく 180MB しか使っていないだけ)。変更後は `sudo systemctl restart librechat mongodb`。
+
+## 7. ストレージ
+
+`/var/lib/mongodb` は 321MB だが、内訳はジャーナルの事前確保 (300MB) でデータは 7.6MB 程度。
+実データは dataSize 1.8MB / storageSize 2.2MB / indexSize 3.7MB (messages 63 件)。
+
+- `journal/` の 300MB (WiredTigerLog 100MB + WiredTigerPreplog ×2) は MongoDB 7 では縮小できない。
+  データ量と無関係に載る固定コスト
+- 保存量は素のテキストよりツール出力が効く (検索・取得系エージェントのツール結果がメッセージに保存される)
+- WiredTiger は空き領域をファイルシステムへ返さない。削除で穴が残るので `db.compact()` 相当で戻す
+- アップロードファイルは Mongo ではなく `/opt/librechat/data`。ログは `/var/log/mongodb` と
+  `/opt/librechat/logs`
+- 書き込み先 overlay は 960M 中 403M 使用 / 558M 空き。Mongo の 321MB が固定でのる
+
+## 8. リバースプロキシ経由で公開する場合
+
+`.env` の `HOST` はバインド、`DOMAIN_CLIENT` / `DOMAIN_SERVER` は外から見える URL。
+公開する場合は初期値の `http://localhost:3080` を公開 origin に書き換える。
+
+```
+DOMAIN_CLIENT=https://chat.example.com
+DOMAIN_SERVER=https://chat.example.com
+TRUST_PROXY=1
+```
+
+- 認証系 (`/login` など) には same-origin ガードがあり、信頼 origin は `DOMAIN_CLIENT` /
+  `DOMAIN_SERVER` / `ADMIN_PANEL_URL` だけ。合わないと 403 `Cross-site request rejected`
+- プロキシは `Host` と `X-Forwarded-Proto` を転送する。`TRUST_PROXY` は既定 1 (最初のプロキシを信頼)
+- `DOMAIN_SERVER` のホスト名が localhost 系だと `NODE_ENV=production` でも認証 cookie が
+  non-secure になる (HTTPS 公開時は公開ホスト名にすること)
+- passkey を使うなら公開前に最終ホストを決める。`PASSKEY_RP_ID` の既定が `DOMAIN_CLIENT` の
+  ホスト名で、後から変えると既存 passkey が使えなくなる
+- 変更後は `sudo systemctl restart librechat`
+
+## 9. モバイルからアプリとして使う (iOS)
+
+manifest と service worker は同梱済み (`/manifest.webmanifest`、`/sw.js`)。ホーム画面に追加すると
+単独ウィンドウで起動する Web アプリになる。
+
+Safari でサイトを開いて「…」→「共有」→「ホーム画面に追加」→「Web アプリとして開く」をオン→「追加」。
+iOS 26 の既定レイアウト (Compact) では共有ボタンが「…」に統合されたため、この経路はワンタップ増える。
+アドレスバー長押しから共有を出すこともできる。ツールバーに常時表示したい場合は
+設定 > アプリ > Safari > タブ を Bottom または Top にする。
+
+- 共有シートに「ホーム画面に追加」が無ければシート下部の「動作を編集」で有効化する
+- HTTPS 前提 (プロキシまたはトンネル側で HTTPS 終端)
+- アプリ名は manifest に焼き込まれた "LibreChat" で、`APP_TITLE` は効かない
+
+## 10. MCP サーバーの権限
+
+既定で一般ユーザー (USER ロール) は MCP サーバーを「使える」が「追加できない」。追加 UI が出ないのは仕様。
+
+- 一般ユーザーに使わせるには ADMIN がサーバー単位で共有する (全員共有可)
+- ロール全体で追加権限を開けるなら管理パネルのロール編集で `MCP_SERVERS` の CREATE を有効にする
+  (`.env` に `ADMIN_PANEL_URL` が必要)
+- 共通サーバーを管理者定義として配るなら `/opt/librechat/librechat.yaml` のトップレベル `mcpServers` でも定義できる

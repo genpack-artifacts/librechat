@@ -112,3 +112,84 @@ genpack build
   `app-office/libreoffice` を `packages` に足す (ヘッドレス変換に X/Wayland は不要。
   実装は `--norestore --invisible --nodefault` に呼び出しごとの `-env:UserInstallation` 一時プロファイル、
   env は PATH/HOME/TMPDIR のみ、30s タイムアウト、50MB 上限。soffice は /usr 由来なので exec-guard と相容れる)
+
+## メモリ
+
+2GB 割り当ての VM (swap なし) での実測。稼働開始後通常チャット利用時:
+
+| 対象 | RSS | ピーク |
+| --- | --- | --- |
+| librechat (node) | 431 MB | 496 MB |
+| mongodb (mongod) | 180 MB | 180 MB |
+| VM 全体 | used 729 MB / available 1217 MB | |
+
+`free` の buff/cache 815 MB はページキャッシュ (SquashFS 由来の読み込みを含む) で回収される。
+1ユーザーの通常利用なら 2GB で足りる。ただし上限を宣言していない箇所がある:
+
+- WiredTiger キャッシュは `/etc/mongodb.conf` に指定がなく、既定式 `(RAM - 1GB) * 0.5 + 1GB` で
+  2GB では約 1.5GB まで膨張し得る。現状はデータが小さく 180MB しか使っていないだけで、
+  負荷が上がると node と競う
+- node は `NODE_OPTIONS` 未指定。swap なしでは V8 の GC より先に OOM killer に触れる形になる
+- 低メモリ運用なら `librechat.service` の `Environment=` に
+  `NODE_OPTIONS=--max-old-space-size=1024`、`/etc/mongodb.conf` に
+  `storage.wiredTiger.collectionConfig.cacheSizeGB: 0.5` を宣言して固定するのが素直
+- コンテキストウィンドウの実値を `tokenConfig` で宣言しておくと (上の項)、巨大なプロンプト
+  組み立てを未然に防いでメモリ側にも効く
+
+## ストレージ
+
+2GB VM での実測。MongoDB dbPath は 321MB に見えるが、内訳はジャーナルの事前確保:
+
+| 内訳 | 使用 |
+| --- | --- |
+| `journal/` (WiredTigerLog 100MB + WiredTigerPreplog ×2) | 300 MB |
+| collection / index 等の `.wt` 合計 | 7.6 MB |
+| 実データ (db.stats) | dataSize 1.8 MB / storageSize 2.2 MB / indexSize 3.7 MB (messages 63 件) |
+
+- 300MB のジャーナルは MongoDB 7 では縮小できない (mongod に prealloc 系のオプションが無く、
+  journal 無効化は 5.0 で廃止)。データ量と無関係に載る固定コストとして見る
+- 保存量は素のテキストよりツール出力が効く。実測で messageTokens 27,480 に対し
+  toolMessageTokens 26,636 (検索・取得系エージェントでは保存量が倍近いペースで増える)
+- WiredTiger は空き領域をファイルシステムへ返さない。削除で穴が残るので `db.compact()` 相当で戻す
+- アップロードファイルは Mongo ではなく `/opt/librechat/data`。ログは `/var/log/mongodb` と
+  `/opt/librechat/logs`
+- 実際の制約は overlay (実測 960M 中 403M 使用 / 558M 空き)。Mongo の 321MB が固定でのるため
+  overlay を詰めると最初に詰まるのはここ
+
+## リバースプロキシ経由で公開する
+
+`HOST` はバインドの話で、`DOMAIN_CLIENT` / `DOMAIN_SERVER` は「外からどう見えるか」の話。
+生成される `.env` は両方 `http://localhost:3080` なので、プロキシ経由で公開するなら公開 origin
+(例 `https://chat.example.com`) に書き換える。
+
+- 認証系エンドポイント (`/login`、`/2fa/verify-temp`、`/passkey/login/verify`、登録・パスワードリセット、
+  admin 認証) に same-origin ガードがある (api/server/routes/auth.js:73,156,188 →
+  packages/api/src/middleware/origin.ts:65-87)。信頼 origin は `DOMAIN_CLIENT` / `DOMAIN_SERVER` /
+  `ADMIN_PANEL_URL` だけ (api/server/middleware/requireSameOrigin.js:5-7) で、外すための env は無い。
+  合わないと 403 `Cross-site request rejected`
+- ガードは `req.protocol` と `Host` も見る。プロキシは `Host` と `X-Forwarded-Proto` を転送し、
+  `TRUST_PROXY` (既定 1 = 最初のプロキシを信頼、api/server/index.js:104,205) を実構成に合わせる
+- 認証 cookie は `sameSite: 'strict'` (api/server/services/AuthService.js:726-737)。`secure` は
+  `SESSION_COOKIE_SECURE` 未指定時「`NODE_ENV=production` かつ `DOMAIN_SERVER` のホスト名が
+  localhost 系でない」で true (packages/api/src/oauth/csrf.ts:21-47)。scheme ではなくホスト名で
+  決まるので、`DOMAIN_SERVER` を `localhost` に残したまま HTTPS 公開すると cookie が non-secure のまま
+- passkey を使うなら `PASSKEY_RP_ID` の既定は `DOMAIN_CLIENT` のホスト名。後からホスト名を変えると
+  既存 passkey は使えなくなる (`.env.example` の PASSKEY 節)。公開前に最終ホストを決める
+- Origin / Sec-Fetch-Site を持たないリクエストはガードを素通しする (origin.ts:49-52)。
+  API や CLI 経由の運用は origin 設定の影響を受けない
+- same-origin ガードは login CSRF に対する二重壁。cookie が `sameSite: strict` で守られている既定構成では
+  ブラウザ側が既にクロスサイトの `Set-Cookie` を弾くため、ガード自体は無くても動いてしまう。
+  `SESSION_COOKIE_SECURE=false` や平文 HTTP など cookie が緩む構成では唯一の防御になる
+
+## MCP サーバーの権限
+
+- 既定で USER ロールは MCP サーバーを「使える」が「追加できない」 (`MCP_SERVERS` の USE=true /
+  CREATE=false、packages/data-provider/src/roles.ts:256-262)。2 人目以降のユーザーに追加 UI が出ない
+  のは仕様で、ナビの追加項目は CREATE 側でゲートされている (client/src/hooks/Nav/useSideNavLinks.ts:84-90)
+- 一般ユーザーに使えるようにする運用は ADMIN 側でサーバー単位共有 (全員共有可) が素直。
+  サーバー単位の effective permissions で USE が通る (client/src/hooks/MCP/useMCPServerManager.ts:124-141)
+- ロール全体で CREATE を開けるなら管理パネルのロール編集
+  (`PUT /api/admin/roles/:roleName/mcp-servers`、`MANAGE_ROLES` capability 必須、
+  api/server/routes/roles.js:184)。管理パネルは `.env` の `ADMIN_PANEL_URL` を設定すると有効になる
+- 共通サーバーを管理者定義として配るなら `librechat.yaml` のトップレベル `mcpServers` でも定義できる
+  (packages/data-provider/src/config.ts:3869)

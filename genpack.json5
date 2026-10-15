@@ -18,11 +18,17 @@
         // librechat ユーザーに NOPASSWD でサービス再起動をさせる (files/etc/sudoers.d)。
         // genpack/base プロファイルには含まれないので明示的に立てる。
         "app-admin/sudo",
+
+        // ビルド時のシャロークローンに加え、インスタンス側で MCP サーバーを
+        // GitHub から clone して運用する用途で実行時にも必要。
+        "dev-vcs/git",
+
+        // MCP サーバーに渡す API 鍵を UID keyring に投入する (keyctl padd ... @u)。
+        // user キーはディスクに永続化されないため、鍵をファイルシステムに残さない運用に使う。
+        "sys-apps/keyutils",
     ],
 
     buildtime_packages: [
-        "dev-vcs/git", // リリースタグのシャロークローン
-
         // mongodb-7.0.28 の SConstruct が "from pkg_resources import parse_version" を使うが
         // ebuild の BDEPEND に入っていない (setuptools 81 で pkg_resources が別パッケージに分離)。
         // 8 系は dev-python/packaging を BDEPEND に持つのでこの問題は出ない。

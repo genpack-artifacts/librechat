@@ -193,3 +193,20 @@ genpack build
   api/server/routes/roles.js:184)。管理パネルは `.env` の `ADMIN_PANEL_URL` を設定すると有効になる
 - 共通サーバーを管理者定義として配るなら `librechat.yaml` のトップレベル `mcpServers` でも定義できる
   (packages/data-provider/src/config.ts:3869)
+
+## MCP サーバーの同梱方針
+
+stdio MCP サーバーはイメージに焼き込まず、インスタンス側で GitHub から clone して `librechat.yaml` の
+`mcpServers` に登録する運用にする。そのため `packages` に `dev-vcs/git` と `sys-apps/keyutils` を立てている。
+
+- exec-guard は upper layer 由来の ELF 実行を止めるだけで、インタープリタ経由のスクリプト実行は制限しない
+  (docs/exec-guard.md:52)。Python stdlib のみの stdio MCP サーバーなら clone してそのまま動かせる
+- clone したリポジトリに ELF や `.so` が含まれる場合 (プリコンパイル済み補助バイナリ、`pip install` する
+  C 拡張など) は upper 由来なので実行も dlopen もできない。必要なら `packages` 経由で lower に入れる
+- API 鍵はファイルシステムに残さない運用にする。`su - librechat` 後に `keyctl padd user <key_name> @u` で
+  UID keyring に投入する (payload は stdin から読むので argv にもシェル履歴にも残らない)。
+  root で投入すると root の UID keyring に入り uid 1000 からは見えない。UID keyring は uid 1000 の
+  プロセスが全て消えると破棄され得る
+- 鍵を env 経由で渡すなら `env: { XAI_API_KEY: "${XAI_API_KEY}" }` と書ける。`${VAR}` は LibreChat
+  プロセスの `process.env` から解決される (packages/data-provider/src/utils.ts:37-52)。
+  keyring 運用ではスクリプト側が `keyctl search @u` で読む

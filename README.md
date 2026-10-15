@@ -280,6 +280,11 @@ mcpServers:
         description: 'あなたの X アカウント名 (@ は不要)'
         sensitive: false
 ```
+
+- 従量課金 API を複数ユーザーで共有する場合、エンドユーザー単位の ID を受け付ける API (Exa の
+  `userIdentifier` など) に `{{LIBRECHAT_USER_ID}}` を渡すと使用量をユーザーごとに按分できる。
+  Mongo ObjectId の 16 進文字列は `^[A-Za-z0-9_-]{1,64}$` のパターンに収まる。名前やメールアドレスなど
+  個人情報をこの種の変数に送るのは禁止されている
 - UI から追加した DB 由来サーバー (`source === 'user'` / `dbId`) では env/args のプレースホルダが
   解決されず `customUserVars` だけになる (env.ts:419-433)。ユーザー識別を渡すなら yaml 定義が必須
 - 解決できない名前は空文字にストリップされる (`stripUnresolvedPlaceholders`)。タイポは黙って空になる。

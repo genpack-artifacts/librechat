@@ -260,6 +260,26 @@ mcpServers:
   packages/api/src/mcp/utils.ts:600。`args` と `env` が検査対象, utils.ts:252-263)。起動ログでは
   `Capabilities: undefined` / `Tools: undefined` / `Initialized in: 0ms` に出て、ツールはユーザーが
   初めてリクエストしたときに登録される。0 ms で undefined なのは失敗ではない
+- 値がユーザー固有で `{{LIBRECHAT_USER_*}}` に対応フィールドが無いもの (X のアカウント名など) は
+  `customUserVars` で宣言する。各エントリが UI のサーバー設定ダイアログのフィールドになり
+  (client/src/hooks/MCP/useMCPServerManager.ts:767-777)、入力値はユーザーごとに `mcp_<サーバー名>` キーで
+  保存され (packages/api/src/mcp/auth.ts)、接続時に `{{VAR}}` として args / env / headers / apiKey に
+  展開される (packages/api/src/utils/env.ts:336-342)。`sensitive` 既定 true、平文表示にしたい値は false
+
+```yaml
+mcpServers:
+  x:
+    type: stdio
+    command: /usr/bin/python3
+    args:
+      - /var/lib/librechat/mcp/x_mcp.py
+      - '--x-username={{X_USERNAME}}'
+    customUserVars:
+      X_USERNAME:
+        title: 'X username'
+        description: 'あなたの X アカウント名 (@ は不要)'
+        sensitive: false
+```
 - UI から追加した DB 由来サーバー (`source === 'user'` / `dbId`) では env/args のプレースホルダが
   解決されず `customUserVars` だけになる (env.ts:419-433)。ユーザー識別を渡すなら yaml 定義が必須
 - 解決できない名前は空文字にストリップされる (`stripUnresolvedPlaceholders`)。タイポは黙って空になる。

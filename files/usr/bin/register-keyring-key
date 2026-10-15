@@ -1,0 +1,89 @@
+#!/bin/sh
+# register-keyring-key - interactively register user keys into the UID keyring.
+#
+#   register-keyring-key xai_api_key other_service1_api_key ...
+#
+# Each name is prompted on the tty with echo disabled. A key that is already
+# registered is reported with a masked preview; Enter with an empty value keeps
+# the existing key and moves on. Payloads never pass through argv, so they stay
+# out of shell history and /proc/<pid>/cmdline.
+#
+# Keys land in the UID keyring of whoever runs this (keyctl ... @u), so run it as
+# the user that will read them, e.g. `su - librechat` before registering.
+
+set -eu
+
+if [ "$#" -eq 0 ]; then
+	echo "usage: ${0##*/} <key_name> [...]" >&2
+	exit 2
+fi
+
+if ! command -v keyctl >/dev/null 2>&1; then
+	echo "keyctl not found: install sys-apps/keyutils" >&2
+	exit 1
+fi
+
+uid=$(id -u)
+if [ "$uid" -eq 0 ]; then
+	echo "note: running as root, keys go to root's UID keyring (uid 0)" >&2
+fi
+
+read_hidden() {
+	if [ ! -e /dev/tty ]; then
+		echo "no tty to read from" >&2
+		return 1
+	fi
+	saved=$(stty -g < /dev/tty 2>/dev/null) || saved=""
+	if [ -n "$saved" ]; then
+		stty -echo < /dev/tty
+	fi
+	line=""
+	if ! IFS= read -r line < /dev/tty; then
+		line=""
+	fi
+	if [ -n "$saved" ]; then
+		stty "$saved" < /dev/tty 2>/dev/null || stty echo < /dev/tty
+	fi
+	printf '\n' > /dev/tty
+	printf '%s' "$line"
+}
+
+mask() {
+	keyctl print "$1" 2>/dev/null | awk \
+		'{ if (length($0) > 8) print substr($0, 1, 4) "..."; else print "***" }'
+}
+
+for name in "$@"; do
+	case "$name" in
+	*[!A-Za-z0-9_.-]*)
+		echo "skipping invalid key name: $name" >&2
+		continue
+		;;
+	esac
+
+	id=$(keyctl search @u user "$name" 2>/dev/null) || id=""
+
+	if [ -n "$id" ]; then
+		printf '%s: already registered (key id %s, uid %s): ' "$name" "$id" "$uid" > /dev/tty
+		mask "$id" > /dev/tty
+		printf 'empty to keep it: ' > /dev/tty
+	else
+		printf '%s: not registered. value: ' "$name" > /dev/tty
+	fi
+
+	value=$(read_hidden)
+
+	if [ -z "$value" ]; then
+		if [ -n "$id" ]; then
+			printf '%s: kept as is\n' "$name"
+		else
+			printf '%s: skipped\n' "$name"
+		fi
+		value=""
+		continue
+	fi
+
+	new_id=$(printf '%s' "$value" | keyctl padd user "$name" @u)
+	printf '%s: registered (key id %s)\n' "$name" "$new_id"
+	value=""
+done

@@ -207,6 +207,9 @@ stdio MCP サーバーはイメージに焼き込まず、インスタンス側�
   UID keyring に投入する (payload は stdin から読むので argv にもシェル履歴にも残らない)。
   root で投入すると root の UID keyring に入り uid 1000 からは見えない。UID keyring は uid 1000 の
   プロセスが全て消えると破棄され得る
+- 投入作業には同梱ユーティリティ `/usr/bin/register-keyring-key` を使う。名前を並べて実行すると
+  鍵ごとにエコーバックなしで入力し、登録済みの場合は先頭 4 文字だけをマスク表示して空 Enter で
+  既存を保持する (`register-keyring-key xai_api_key other_service_api_key`)
 - 鍵を env 経由で渡すなら `env: { XAI_API_KEY: "${XAI_API_KEY}" }` と書ける。`${VAR}` は LibreChat
   プロセスの `process.env` から解決される (packages/data-provider/src/utils.ts:37-52)。
   keyring 運用ではスクリプト側が `keyctl search @u` で読む

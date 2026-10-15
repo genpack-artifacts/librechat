@@ -42,6 +42,7 @@ rm -rf "$APP_DIR/.git" /root/.npm /root/.cache
 # 6. アプリの書き込み領域 (data/, logs/, .env) と設定編集を librechat に
 chown -R librechat:librechat "$APP_DIR"
 chmod 0755 /usr/lib/librechat/gen-env.sh
+chmod 0755 /usr/bin/register-keyring-key
 
 # 7. sudoers drop-in の整備
 #    - git は 0440 を保持できないのでモードをここで確定させる

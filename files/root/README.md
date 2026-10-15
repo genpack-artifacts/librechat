@@ -154,3 +154,18 @@ iOS 26 の既定レイアウト (Compact) では共有ボタンが「…」に�
 - ロール全体で追加権限を開けるなら管理パネルのロール編集で `MCP_SERVERS` の CREATE を有効にする
   (`.env` に `ADMIN_PANEL_URL` が必要)
 - 共通サーバーを管理者定義として配るなら `/opt/librechat/librechat.yaml` のトップレベル `mcpServers` でも定義できる
+
+## 11. API 鍵の投入 (keyring)
+
+MCP サーバーなどに渡す API 鍵はファイルシステムに置かず、UID keyring に入れる。
+
+```sh
+su - librechat
+register-keyring-key xai_api_key other_service_api_key
+```
+
+- 鍵ごとにエコーバックなしで入力する。登録済みなら先頭 4 文字だけをマスク表示し、空 Enter で既存を保持して次へ進む
+- 投入先は実行したユーザーの UID keyring (`@u`)。LibreChat が読む鍵は `su - librechat` して投入する
+  (root で投入すると root の UID keyring に入り uid 1000 からは見えない)
+- keyring はディスクに永続化されない。再起動後、または uid 1000 のプロセスが全て消えた後は再投入が必要
+- 確認は `keyctl search @u user xai_api_key`。中身を出す `keyctl print` は避ける

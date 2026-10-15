@@ -256,6 +256,10 @@ mcpServers:
 - tool call の既定タイムアウトは 60 s (packages/api/src/mcp/connection.ts:155 `DEFAULT_TIMEOUT`)。
   外部 API を呼んで長く待つサーバーは `timeout` を越す値で宣言しないと途中で kill される
   (`initTimeout` は 30 s)
+- プレースホルダを含むサーバーは起動時の app 共有接続を使えない (`requiresUserScopedConnection`,
+  packages/api/src/mcp/utils.ts:600。`args` と `env` が検査対象, utils.ts:252-263)。起動ログでは
+  `Capabilities: undefined` / `Tools: undefined` / `Initialized in: 0ms` に出て、ツールはユーザーが
+  初めてリクエストしたときに登録される。0 ms で undefined なのは失敗ではない
 - UI から追加した DB 由来サーバー (`source === 'user'` / `dbId`) では env/args のプレースホルダが
   解決されず `customUserVars` だけになる (env.ts:419-433)。ユーザー識別を渡すなら yaml 定義が必須
 - 解決できない名前は空文字にストリップされる (`stripUnresolvedPlaceholders`)。タイポは黙って空になる。

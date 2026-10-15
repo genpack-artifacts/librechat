@@ -181,6 +181,8 @@ mcpServers:
   (`MAIL_TO: '{{LIBRECHAT_USER_EMAIL}}'`, `MEMORY_KEY: '{{LIBRECHAT_USER_ID}}'`)
 - tool call の既定タイムアウトは 60 s。外部 API を長く待つサーバーは `timeout` を上げておく
 - UI から追加したサーバーではプレースホルダが解決されない。ユーザー識別を渡すなら yaml 定義が必須
+- プレースホルダを含むサーバーは起動時には初期化されず、ログに `Tools: undefined` / `Initialized in: 0ms`
+  と出る。失敗ではなく、そのユーザーが初めてリクエストしたときに初期化される
 
 ## 11. API 鍵の投入 (keyring)
 

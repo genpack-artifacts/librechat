@@ -171,11 +171,15 @@ mcpServers:
       - '{{LIBRECHAT_USER_ID}}'
     env:
       LIBRECHAT_USER_ID: '{{LIBRECHAT_USER_ID}}'
+    timeout: 130000
 ```
 
 - env と args はどちらか片方でよい。引数は `ps` で見える、env は同じ UID と root だけ。
   秘密値は env、識別子はどちらでも可
 - サーバー側は両方受け付けて (引数優先、無ければ env) どちらで渡すかはコンフィグを書く側が決める
+- env に定数を書くと全ユーザー共通の値になる。ユーザーごとに違えるものはプレースホルダで書く
+  (`MAIL_TO: '{{LIBRECHAT_USER_EMAIL}}'`, `MEMORY_KEY: '{{LIBRECHAT_USER_ID}}'`)
+- tool call の既定タイムアウトは 60 s。外部 API を長く待つサーバーは `timeout` を上げておく
 - UI から追加したサーバーではプレースホルダが解決されない。ユーザー識別を渡すなら yaml 定義が必須
 
 ## 11. API 鍵の投入 (keyring)

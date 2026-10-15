@@ -239,6 +239,7 @@ mcpServers:
       - '{{LIBRECHAT_USER_ID}}'
     env:
       LIBRECHAT_USER_ID: '{{LIBRECHAT_USER_ID}}'
+    timeout: 130000
 ```
 
 - 渡すのは env と args のどちらか片方でよい。判断基準:
@@ -248,6 +249,13 @@ mcpServers:
   - 別 UID で動かす (sudo ラッパー) 構成では `sudo` の `env_reset` で env が消えることがある
 - サーバー側は両方受け付けて (引数優先、未指定なら env を参照) どちらで渡すかはコンフィグを書く側が
   判断するのが素直
+- env に定数を書くとその値は全ユーザーのインスタンスに同じように配られる。env が設定可能でも
+  ユーザーごとに違う値にはならない。ユーザー依存の値 (宛先アドレス、記憶の namespace など) は
+  `MAIL_TO: '{{LIBRECHAT_USER_EMAIL}}'` / `MEMORY_KEY: '{{LIBRECHAT_USER_ID}}'` のように
+  プレースホルダで書く
+- tool call の既定タイムアウトは 60 s (packages/api/src/mcp/connection.ts:155 `DEFAULT_TIMEOUT`)。
+  外部 API を呼んで長く待つサーバーは `timeout` を越す値で宣言しないと途中で kill される
+  (`initTimeout` は 30 s)
 - UI から追加した DB 由来サーバー (`source === 'user'` / `dbId`) では env/args のプレースホルダが
   解決されず `customUserVars` だけになる (env.ts:419-433)。ユーザー識別を渡すなら yaml 定義が必須
 - 解決できない名前は空文字にストリップされる (`stripUnresolvedPlaceholders`)。タイポは黙って空になる。

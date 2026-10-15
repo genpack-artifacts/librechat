@@ -26,6 +26,10 @@
         // MCP サーバーに渡す API 鍵を UID keyring に投入する (keyctl padd ... @u)。
         // user キーはディスクに永続化されないため、鍵をファイルシステムに残さない運用に使う。
         "sys-apps/keyutils",
+
+        // インスタンス側で Python 製の stdio MCP サーバーを動かすため。
+        // 現在のイメージに入っているのは他パッケージの依存の副産物なので宣言する。
+        "dev-lang/python",
     ],
 
     buildtime_packages: [

@@ -169,3 +169,5 @@ register-keyring-key xai_api_key other_service_api_key
   (root で投入すると root の UID keyring に入り uid 1000 からは見えない)
 - keyring はディスクに永続化されない。再起動後、または uid 1000 のプロセスが全て消えた後は再投入が必要
 - 確認は `keyctl search @u user xai_api_key`。中身を出す `keyctl print` は避ける
+- LibreChat が鍵を読めるのは `librechat.service` に `KeyringMode=shared` がある場合だけ。
+  無いとサービス側は `keyctl search @u` こそ通るが `keyctl print` は Permission denied になる

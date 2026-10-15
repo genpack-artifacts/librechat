@@ -8,6 +8,9 @@ Wants=network-online.target mongodb.service
 Type=simple
 User=librechat
 Group=librechat
+# UID keyring (keyctl ... @u) の鍵を読むにはこれが必要。既定 (inherit) ではサービスの
+# session keyring に user keyring がリンクされず、search は出来ても read が EACCES になる。
+KeyringMode=shared
 WorkingDirectory=/opt/librechat
 Environment=NODE_ENV=production
 EnvironmentFile=-/opt/librechat/.env

@@ -210,6 +210,13 @@ stdio MCP サーバーはイメージに焼き込まず、インスタンス側�
 - 投入作業には同梱ユーティリティ `/usr/bin/register-keyring-key` を使う。名前を並べて実行すると
   鍵ごとにエコーバックなしで入力し、登録済みの場合は先頭 4 文字だけをマスク表示して空 Enter で
   既存を保持する (`register-keyring-key xai_api_key other_service_api_key`)
+- サービスから UID keyring の鍵を読むには `librechat.service` の `KeyringMode=shared` が要る。
+  VM で実測: 既定 (inherit) の `User=librechat` サービスでは `keyctl search @u` は通るが
+  `keyctl print` は `EACCES`。`KeyringMode=shared` を足すと読めるようになった。既定値では
+  サービスの session keyring に user keyring がリンクされない (systemd.exec の KeyringMode 説明)
+- `keyctl padd` が作る鍵の既定権限は possessor 全権 + user は VIEW だけで、`keyctl setperm` は
+  作成した cred でないと実行できない (他プロセスからは `EACCES`)。だから権限いじりではなく
+  `KeyringMode=shared` で解決する
 - 鍵を env 経由で渡すなら `env: { XAI_API_KEY: "${XAI_API_KEY}" }` と書ける。`${VAR}` は LibreChat
   プロセスの `process.env` から解決される (packages/data-provider/src/utils.ts:37-52)。
   keyring 運用ではスクリプト側が `keyctl search @u` で読む

@@ -217,6 +217,41 @@ stdio MCP サーバーはイメージに焼き込まず、インスタンス側�
 - `keyctl padd` が作る鍵の既定権限は possessor 全権 + user は VIEW だけで、`keyctl setperm` は
   作成した cred でないと実行できない (他プロセスからは `EACCES`)。だから権限いじりではなく
   `KeyringMode=shared` で解決する
+
+### リクエスト主の情報を MCP サーバーに渡す
+
+stdio MCP サーバーにはリクエスト主の情報を渡せる。MCP 接続はユーザー単位でプールされる
+(`MCPManager.userConnections: Map<userId, Map<serverName, MCPConnection>>`) ので、yaml 定義の
+stdio サーバーはユーザーごとに別プロセスとして spawn され、`env` と `args` の両方が
+`{{LIBRECHAT_USER_*}}` / `{{LIBRECHAT_BODY_*}}` / `{{LIBRECHAT_OPENID_*}}` で解決される
+(packages/api/src/utils/env.ts:450-479)。許可フィールドは `id`, `name`, `username`, `email`,
+`provider`, `role`, `openidId` など (env.ts:34 以降)、body 側は `conversationId`,
+`parentMessageId`, `messageId` (env.ts:151)。
+
+```yaml
+mcpServers:
+  mydata:
+    type: stdio
+    command: /usr/bin/python3
+    args:
+      - /opt/librechat/mcp/mydata.py
+      - '--user-id'
+      - '{{LIBRECHAT_USER_ID}}'
+    env:
+      LIBRECHAT_USER_ID: '{{LIBRECHAT_USER_ID}}'
+```
+
+- 渡すのは env と args のどちらか片方でよい。判断基準:
+  - 引数は `/proc/<pid>/cmdline` に出る。そのホストのローカルユーザーなら誰でも `ps` で読めて、
+    監査ログやクラッシュログにも残る
+  - env は `/proc/<pid>/environ` を同じ UID か root しか読めない
+  - 別 UID で動かす (sudo ラッパー) 構成では `sudo` の `env_reset` で env が消えることがある
+- サーバー側は両方受け付けて (引数優先、未指定なら env を参照) どちらで渡すかはコンフィグを書く側が
+  判断するのが素直
+- UI から追加した DB 由来サーバー (`source === 'user'` / `dbId`) では env/args のプレースホルダが
+  解決されず `customUserVars` だけになる (env.ts:419-433)。ユーザー識別を渡すなら yaml 定義が必須
+- 解決できない名前は空文字にストリップされる (`stripUnresolvedPlaceholders`)。タイポは黙って空になる。
+  ユーザーごとにプロセスが増えるので起動コストとメモリはユーザー数に比例する
 - 鍵を env 経由で渡すなら `env: { XAI_API_KEY: "${XAI_API_KEY}" }` と書ける。`${VAR}` は LibreChat
   プロセスの `process.env` から解決される (packages/data-provider/src/utils.ts:37-52)。
   keyring 運用ではスクリプト側が `keyctl search @u` で読む

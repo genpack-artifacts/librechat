@@ -155,6 +155,29 @@ iOS 26 の既定レイアウト (Compact) では共有ボタンが「…」に�
   (`.env` に `ADMIN_PANEL_URL` が必要)
 - 共通サーバーを管理者定義として配るなら `/opt/librechat/librechat.yaml` のトップレベル `mcpServers` でも定義できる
 
+### リクエスト主の情報を受け渡す
+
+stdio サーバーはユーザーごとに別プロセスで起動するので、`env` と `args` に `{{LIBRECHAT_USER_ID}}`
+などのプレースホルダを書けばそのユーザーの情報が入る。
+
+```yaml
+mcpServers:
+  mydata:
+    type: stdio
+    command: /usr/bin/python3
+    args:
+      - /opt/librechat/mcp/mydata.py
+      - '--user-id'
+      - '{{LIBRECHAT_USER_ID}}'
+    env:
+      LIBRECHAT_USER_ID: '{{LIBRECHAT_USER_ID}}'
+```
+
+- env と args はどちらか片方でよい。引数は `ps` で見える、env は同じ UID と root だけ。
+  秘密値は env、識別子はどちらでも可
+- サーバー側は両方受け付けて (引数優先、無ければ env) どちらで渡すかはコンフィグを書く側が決める
+- UI から追加したサーバーではプレースホルダが解決されない。ユーザー識別を渡すなら yaml 定義が必須
+
 ## 11. API 鍵の投入 (keyring)
 
 MCP サーバーなどに渡す API 鍵はファイルシステムに置かず、UID keyring に入れる。

@@ -50,11 +50,15 @@
     // clang / bpftool は genpack-overlay の ebuild が自動依存。無効化は system.ini の `exec_guard = false`。
     use: {
         "sys-apps/genpack-init": "exec-guard",
+        "dev-cpp/simdutf": "atomic-base64",
     },
 
     accept_keywords: {
-        // net-libs/nodejs は Portage ツリーで全て ~amd64
-        "net-libs/nodejs": null,
+        ">=net-libs/nodejs-26.12.1": null,
+        ">=app-arch/brotli-1.2.1": null,
+        ">=dev-cpp/simdutf-9.2.1": null,
+        ">=dev-libs/simdjson-5.0.3": null,
+        ">=dev-libs/openssl-3.5.9": null,
     },
 
     license: {

@@ -22,7 +22,12 @@ WorkingDirectory=/var/lib/meilisearch
 ExecStartPre=+/usr/lib/librechat/gen-env.sh
 # MEILI_MASTER_KEY / MEILI_NO_ANALYTICS は LibreChat の .env から読む (同一シークレットを共有)。
 # systemd が root で読むので、meilisearch 自体は .env (0600) を読めなくてもよい。
-EnvironmentFile=/opt/librechat/.env
+# `-` 接頭辞必須: systemd は各 exec ステップ (start-pre 含む) 前に EnvironmentFile を
+# 解決する。初回起動 (volatile/transient 等) で .env がまだ無いと、它を生成するはずの
+# ExecStartPre 自体が "Failed to load environment files" で失敗する (2026-11 実測)。
+# `-` でも ExecStart 時点では ExecStartPre が生成した後のファイルが読まれるので、
+# マスターキーは失われない。
+EnvironmentFile=-/opt/librechat/.env
 ExecStart=/usr/bin/meilisearch --db-path /var/lib/meilisearch --http-addr 127.0.0.1:7700
 Restart=on-failure
 RestartSec=5

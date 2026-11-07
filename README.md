@@ -84,6 +84,12 @@ genpack build
   - バイナリは build.d で GitHub リリース (v1.56.1、sha256 検証付き) を /usr/bin に焼く。
     Portage に ebuild が無く、upper 持ち込みバイナリは exec-guard にブロックされるため。
     357 MB (xz 圧縮で squashfs に +100 MB 程度) あり、イメージサイズが増える
+  - 初回起動 (volatile/transient 含む) では `.env` がまだ存在しない。systemd は
+    exec ステップ (start-pre 含む) の前に EnvironmentFile を解決するため、unit の
+    `EnvironmentFile` が `-` 無しだと meilisearch.service の生成タスク自体が
+    "Failed to load environment files" で失敗する (auto-restart で数秒後に回復するが、
+    ブートログに [FAILED] が出る)。`-` 接頭辞で抑止 (ExecStart 時点では
+    ExecStartPre の gen-env.sh が生成した後のファイルが読まれ、マスターキーは失われない)
   - dbPath (ユーザーホーム兼用) は素のディレクトリでなければならない。skel の
     ドットファイルが入ったディレクトリを dbPath にすると Meilisearch は
     "failed to infer the version of the database" で起動しない (VERSION 無し & 非空は

@@ -78,7 +78,14 @@
     users: [
         // 設定編集やサービス再起動をこのユーザーで行う運用 (sudoers で部分特権)
         { name: "librechat", uid: 1000, home: "/var/lib/librechat", shell: "/bin/bash" },
+
+        // 過去チャット検索の Meilisearch (プリビルドバイナリは build.d で lower に焼く)。
+        // dbPath /var/lib/meilisearch (ユーザーホーム兼用) の所有者。
+        // create_home: false は必須。skel のドットファイルが dbPath に入ると Meilisearch が
+        // "failed to infer the version of the database" で起動しない。
+        // genpack が useradd へ -M を渡す修正 (genpack 1f4eecf) 以降の genpack が必要。
+        { name: "meilisearch", uid: 1001, home: "/var/lib/meilisearch", shell: "/sbin/nologin", create_home: false },
     ],
 
-    services: ["mongodb", "librechat"],
+    services: ["mongodb", "meilisearch", "librechat"],
 }

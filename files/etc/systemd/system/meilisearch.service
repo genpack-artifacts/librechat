@@ -1,0 +1,31 @@
+[Unit]
+Description=Meilisearch (LibreChat 過去チャット全文検索インデックス)
+Documentation=https://www.meilisearch.com/
+After=network.target
+
+[Service]
+Type=simple
+User=meilisearch
+Group=meilisearch
+# dbPath とは別に、dumps/ などを cwd 相対で作る (--dumps-dir 既定が ./dumps)。
+# cwd が / などだと meilisearch 書き込み不可で "Permission denied" で落ちる。
+#
+# dbPath (ユーザーホーム兼用) は必ず素のディレクトリであること。skel のドットファイル
+# が入ったディレクトリを dbPath にすると "failed to infer the version of the database"
+# で起動しない。genpack.json5 の create_home: false で抑えており、これは genpack が
+# useradd へ -M を渡すようになって初めて成立する (genpack 1f4eecf 以降。それ以前は
+# login.defs CREATE_HOME=yes の既定に勝てず skel 混入だった)。
+WorkingDirectory=/var/lib/meilisearch
+# 初回起動時、.env (MEILI_MASTER_KEY 込み) がまだ無い可能性がある。gen-env.sh は
+# librechat.service と共通で冪等。root 実行 (+ 接頭辞) でないと生成後の chown ができない。
+# 両サービスが同時に走っても gen-env.sh 内の flock で直列化する。
+ExecStartPre=+/usr/lib/librechat/gen-env.sh
+# MEILI_MASTER_KEY / MEILI_NO_ANALYTICS は LibreChat の .env から読む (同一シークレットを共有)。
+# systemd が root で読むので、meilisearch 自体は .env (0600) を読めなくてもよい。
+EnvironmentFile=/opt/librechat/.env
+ExecStart=/usr/bin/meilisearch --db-path /var/lib/meilisearch --http-addr 127.0.0.1:7700
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

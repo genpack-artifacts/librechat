@@ -1,8 +1,8 @@
 [Unit]
 Description=LibreChat (Node.js chat server)
 Documentation=https://www.librechat.ai/
-After=network-online.target mongodb.service
-Wants=network-online.target mongodb.service
+After=network-online.target mongodb.service meilisearch.service
+Wants=network-online.target mongodb.service meilisearch.service
 
 [Service]
 Type=simple

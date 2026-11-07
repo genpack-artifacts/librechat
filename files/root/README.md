@@ -1,9 +1,11 @@
 # LibreChat
 
 - アプリ: `/opt/librechat` (ユーザー `librechat`、UID 1000)
-- サービス: `librechat.service` (:3080) / `mongodb.service` (127.0.0.1:27017)
+- サービス: `librechat.service` (:3080) / `mongodb.service` (127.0.0.1:27017) /
+  `meilisearch.service` (127.0.0.1:7700、過去チャット検索)
 - 設定: `/opt/librechat/librechat.yaml` (LLM エンドポイント) と `/opt/librechat/.env` (初回起動時に自動生成)
-- データ: MongoDB dbPath `/var/lib/mongodb`、アプリのアップロード等 `/opt/librechat/data`
+- データ: MongoDB dbPath `/var/lib/mongodb`、検索インデックス `/var/lib/meilisearch`、
+  アプリのアップロード等 `/opt/librechat/data`
 
 設定ファイルは `librechat` ユーザーが編集できる。サービス操作は sudo でパスワード不要。
 
@@ -61,10 +63,16 @@ sudo systemctl restart librechat
 ## 5. 状態確認
 
 ```sh
-sudo systemctl status librechat mongodb
+sudo systemctl status librechat mongodb meilisearch
 journalctl -u librechat -n 50
+curl -s http://127.0.0.1:7700/health   # {"status":"available"} なら検索バックエンド正常
 ls /opt/librechat/logs        # error-YYYY-MM-DD.log
 ```
+
+- 過去チャット検索は既定で有効 (`.env` の `SEARCH=true` + `MEILI_*`)。初回起動時に既存会話は
+  裏方で再インデックスされる。無効化は `.env` で `SEARCH=false` して `sudo systemctl restart librechat`
+  (サイドバーの検索欄はロール権限 Global Search の表示。Meilisearch が無い場合は
+  MongoDB 正規表現検索にフォールバックする)
 
 - MongoDB のログ: `/var/log/mongodb/mongodb.log`
 - `.env` の全オプションと説明: `/opt/librechat/.env.example`

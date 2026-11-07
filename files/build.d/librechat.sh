@@ -44,7 +44,41 @@ chown -R librechat:librechat "$APP_DIR"
 chmod 0755 /usr/lib/librechat/gen-env.sh
 chmod 0755 /usr/bin/register-keyring-key
 
-# 7. sudoers drop-in の整備
+# 7. Meilisearch (過去チャット全文検索)。Portage に ebuild が無いので GitHub リリースの
+#    プリビルドバイナリを lower (squashfs) に焼く。upper 由来バイナリは exec-guard に
+#    ブロックされるため、実行時持ち込みは不可 (go2rtc と同じ方針)。
+#    ビルド再現性のためバージョンをピンし sha256 を検証する。
+MEILI_VERSION=1.56.1
+case "$(uname -m)" in
+	x86_64)
+		MEILI_ARCH=amd64
+		MEILI_SHA256=b2c7a647d4cdfdd7a901466bfd6797077b849e90f5eb2c0f5b1d05869592e27e
+		;;
+	aarch64)
+		MEILI_ARCH=aarch64
+		MEILI_SHA256=f73987f92b094fd15b79956f9bfc9e8fc7294ad6ad610ebf8a4403c170890726
+		;;
+	*)
+		echo "Unsupported architecture for meilisearch: $(uname -m)" >&2
+		exit 1
+		;;
+esac
+download "https://github.com/meilisearch/meilisearch/releases/download/v${MEILI_VERSION}/meilisearch-linux-${MEILI_ARCH}" > /tmp/meilisearch
+echo "${MEILI_SHA256}  /tmp/meilisearch" | sha256sum -c -
+install -m 0755 /tmp/meilisearch /usr/bin/meilisearch
+rm -f /tmp/meilisearch
+
+# インデックスの dbPath (実行時の書き込みはデータパーティションへ copy-up される)。
+# ユーザー作成は create_home: false (genpack 1f4eecf 以降で -M が付く) にしているので、
+# skel 混入のない素の状態を build.d で作る。dotfile が入ると Meilisearch は起動できない。
+# meilisearch ユーザーは genpack.json5 の users で作成される。
+[ -d /var/lib/meilisearch ] || install -d -o meilisearch -g meilisearch -m 0750 /var/lib/meilisearch
+
+# gen-env.sh の直列化用ロック (librechat サービスと meilisearch サービスが共有)。
+# 0666 にしないと root / librechat のどちらから先に開いても失敗する
+install -m 0666 -o librechat -g librechat /dev/null /opt/librechat/.env.lock
+
+# 8. sudoers drop-in の整備
 #    - git は 0440 を保持できないのでモードをここで確定させる
 #    - sudo 既定の /etc/sudoers には includedir が入っていない (upstream の
 #      examples/sudoers.in に無い) ので、drop-in が読まれるように追記する

@@ -8,8 +8,13 @@
 - ビルド: `npm ci` → `npm run frontend` (packages 群 + client の vite ビルド) → `npm prune --omit=dev`
   - backend は実行時に `node_modules` を要する (フロントと違い削除不可)。`--omit=dev` までが安全
   - node は実行時も必要なので `packages` 側 (`net-libs/nodejs`)。package.json に engines 制限はなく 26 系で検証済み
-- 外部サービス: MongoDB のみ。meilisearch 不要 (`NO_INDEX=true` 既定)、rag-api (Python) は任意
+- 外部サービス: MongoDB と Meilisearch (過去チャット全文検索、既定で有効)。rag-api (Python) は任意
   (無いとファイルアップロード RAG だけ警告付きでオフ)
+- 検索: `meilisearch.service` が 127.0.0.1:7700 で起動。`.env` の `SEARCH=true` +
+  `MEILI_HOST` / `MEILI_MASTER_KEY` (gen-env.sh が生成) が有効化の条件 3 点
+  (`api/db/indexSync.js`: `SEARCH` が off なら同期自体走らない。`NO_INDEX` は
+  X-Robots-Tag の話で検索と無関係)。Meilisearch が無くても検索は MongoDB 正規表現に
+  フォールバックする
 - MongoDB: Portage の `dev-db/mongodb` 7 系 (amd64 安定。8 系は `~amd64` で accept_keywords 追加要)。
   ebuild 同梱の `mongodb.service` を `services` で有効化。dbPath `/var/lib/mongodb` は build.d で作成する
   (ebuild は `/var/log/mongodb` しか作らない)。DB の事前投入は不要で mongoose が初回接続時に作成する
@@ -17,7 +22,10 @@
   コメントアウト済み。`version` は v0.8.8 対応の `1.3.17`。古い値だと起動時に
   "Outdated Config version" 警告が出る) と
   `/opt/librechat/.env` (初回起動時に `gen-env.sh` が生成。永続シークレット込み)
-- 実行: `librechat.service` が `node api/server/index.js` を :3080 で起動 (User=librechat)
+- 実行: `librechat.service` が `node api/server/index.js` を :3080 で起動 (User=librechat)。
+  `meilisearch.service` は User=meilisearch、dbPath `/var/lib/meilisearch`、
+  `MEILI_MASTER_KEY` を LibreChat と共通の `.env` から読む (systemd が root で読むため
+  サービス本体が読める必要は無い)
 - 権限: 初回登録ユーザーは自動的に ADMIN (`api/server/services/AuthService.js:416`)。
   `npm run create-user` でも作成可。旧 `ADMIN_USER_IDS` は廃止で、権限は DB ロール体系
   (`librechat.yaml` の grant で `interface.webSearch` 等を初期設定できる。UPGRADING.md 参照)
@@ -38,8 +46,11 @@ genpack build
   IPv4 限定は `0.0.0.0`、ループバック限定は `localhost`
 - VM 外からは `vm run --hostfwd tcp::3080-:3080 ...` でアクセスする (既定の NIC が user モード。
   SLIRP 経由なので到達は IPv4 になる)
-- 既存データパーティションの古い `.env` (HOST 行が無いもの) には、起動時に `gen-env.sh` が
-  `HOST=::` を追記する (HOST 行を明示している場合はユーザーの判断とみなして触らない)
+- 既存データパーティションの古い `.env` には、起動時に `gen-env.sh` が欠けている行を追記する
+  (明示的に宣言 / コメントしている場合はユーザーの判断とみなして触らない):
+  HOST 行が無いもの → `HOST=::`、SEARCH 行が無いもの → `SEARCH=true` + `MEILI_HOST` +
+  `MEILI_MASTER_KEY` (生成) を追記。旧 `.env` の `NO_INDEX=true` はそのまま残るが、
+  これはクローラー向けヘッダーの話で検索とは無関係
 - イメージ内に `/root/README.md` として初期設定手順 (LLM エンドポイント登録 → 管理者作成 →
   Web Search 設定 → 反映 → 状態確認) が入っている。
 
@@ -56,11 +67,32 @@ genpack build
   MCP サーバー定義は DB 管理 (管理パネルの MCP 管理)。
 - `CREDS_KEY` / `CREDS_IV` / `JWT_SECRET` / `JWT_REFRESH_SECRET` 未設定時は `.env.temp` に一時生成され
   再起動でセッション失効する。このアーティファクトでは初回起動時に `.env` へ固定値を書き出して永続化する
+- 過去チャット検索 (Meilisearch):
+  - 有効化条件は `.env` の `SEARCH=true` + `MEILI_HOST` + `MEILI_MASTER_KEY` と
+    `meilisearch.service` の稼働。揃うと起動後に `indexSync` が裏方で既存会話を再インデックスし、
+    以後のメッセージは保存時に同期される。UI のサイドバー検索 (Global Search) はロール権限
+    (capability `SEARCH`) でゲートされ、USER / ADMIN 既定で有効
+  - 無効化は `.env` で `SEARCH=false` + `sudo systemctl restart librechat`
+    (meilisearch.service は動き続く。完全に止めるなら `sudo systemctl disable --now meilisearch`)
+  - 疎通確認は `curl -s http://127.0.0.1:7700/health` → `{"status":"available"}`
+    (health はマスター鍵不要)。インデックスは `messages` / `convos` の 2 つで、
+    `filterableAttributes: user` によりユーザー間の混線は防がれる
+  - バイナリは build.d で GitHub リリース (v1.56.1、sha256 検証付き) を /usr/bin に焼く。
+    Portage に ebuild が無く、upper 持ち込みバイナリは exec-guard にブロックされるため。
+    357 MB (xz 圧縮で squashfs に +100 MB 程度) あり、イメージサイズが増える
+  - dbPath (ユーザーホーム兼用) は素のディレクトリでなければならない。skel の
+    ドットファイルが入ったディレクトリを dbPath にすると Meilisearch は
+    "failed to infer the version of the database" で起動しない (VERSION 無し & 非空は
+    推論不能)。2026-11 実測: skel 入り dbPath で 200+ 回のリスタクループ。
+    抑止は meilisearch ユーザーの `create_home: false` で、これは genpack が
+    create_home false 時に useradd へ `-M` を渡す修正 (**genpack 1f4eecf 以降が必須**。
+    それ以前は login.defs `CREATE_HOME = yes` の既定に勝てず skel 混入だった) に依存する
 
 ## sudoers
 
 `librechat` ユーザーは `app-admin/sudo` と `files/etc/sudoers.d/librechat` により、
-パスワードなしで `systemctl restart|status librechat` / `restart|status mongodb` を実行できる。
+パスワードなしで `systemctl restart|status librechat` / `restart|status mongodb` /
+`restart|status meilisearch` を実行できる。
 
 - sudoers drop-in はモード 0440 が必須。git は 0440 を保持できないので `files/build.d/librechat.sh` で
   `chmod 0440` と `visudo -cf` を行う
@@ -122,6 +154,9 @@ genpack build
 | librechat (node) | 431 MB | 496 MB |
 | mongodb (mongod) | 180 MB | 180 MB |
 | VM 全体 | used 729 MB / available 1217 MB | |
+
+(この計測は meilisearch 導入前。Meilisearch は小規模インデックスで ~100 MB 程度から、
+ドキュメント数に応じて増える。2GB で swap なしなら検索を使うかどうかで空きが数 100 MB 変わる)
 
 `free` の buff/cache 815 MB はページキャッシュ (SquashFS 由来の読み込みを含む) で回収される。
 1ユーザーの通常利用なら 2GB で足りる。ただし上限を宣言していない箇所がある:

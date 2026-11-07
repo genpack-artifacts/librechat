@@ -15,7 +15,11 @@
   (`api/db/indexSync.js`: `SEARCH` が off なら同期自体走らない。`NO_INDEX` は
   X-Robots-Tag の話で検索と無関係)。Meilisearch が無くても検索は MongoDB 正規表現に
   フォールバックする
-- MongoDB: Portage の `dev-db/mongodb` 7 系 (amd64 安定。8 系は `~amd64` で accept_keywords 追加要)。
+- MongoDB: Portage の `dev-db/mongodb` 8 系 (`=dev-db/mongodb-8*` ピン。8.0.29 が amd64 安定、
+  8.0.34 / 8.3 系は `~amd64`)。LibreChat v0.8.8 の公式 docker-compose が `mongo:8.0` を載せるのが
+  基準構成で、mongoose 8 / mongodb driver 6 系に 8.0 を使う制約は無い。7 系からのデータ引き継ぎは
+  7.0 → 8.0 が公式の直接 upgrade path (FCV 7.0 のまま 8.0 バイナリが起動する。明示的に
+  `setFeatureCompatibilityVersion: "8.0"` を行うまで 7 系への差し戻し可)。
   ebuild 同梱の `mongodb.service` を `services` で有効化。dbPath `/var/lib/mongodb` は build.d で作成する
   (ebuild は `/var/log/mongodb` しか作らない)。DB の事前投入は不要で mongoose が初回接続時に作成する
 - 設定: `/opt/librechat/librechat.yaml` (build.d 前にコピーされるテンプレート。エンドポイント例は
@@ -101,19 +105,28 @@ genpack build
 
 ## 注意
 
-- mongodb-7.0.28 のビルドには `dev-python/pkg-resources` が要る (buildtime_packages)。
-  SConstruct が `from pkg_resources import parse_version` を使うのに ebuild の BDEPEND に無い
-  (setuptools 81 で pkg_resources が別パッケージへ分離されたため)。無いと
-  `ModuleNotFoundError: No module named 'pkg_resources'` で compile フェーズが落ちる。
-  8 系は `dev-python/packaging` を BDEPEND に持つのでこの問題は無い。
-  これは宣言依存ではないので一括 emerge では順序が保証されず、
-  `buildtime_packages_first: true` で先行パスに焼く (genpack ADR-0003 の clang-kernel と同型)
+- **mongodb のビルド失敗は OpenSSL 4 の互換性問題だった (2026-11 解決)**。lower に ~amd64 の
+  OpenSSL 4.1.0 が入っていると mongodb 7/8 のどちらもうまくビルドできない。
+  `openssl_init.cpp` の `SSLThreadInfo::getID` が `ERR_remove_state` を guard なしで呼ぶ
+  (OpenSSL 3.x では deprecated だが宣言はあるので警告で通る。4.x で削除され hard error)。
+  犯人は accept_keywords の `">=dev-libs/openssl-3.5.9": null` — nodejs 26 の RDEPEND
+  (>=3.5.9) 用に、3.5.9 がまだ ~amd64 だった頃に入れたもの。range atom なので 4.1.0 の
+  キーワードも許してしまい resolver が最新を選んだ。3.5.9 は現在 stable なので entry を削除。
+  検証は `genpack bash cat /var/tmp/portage/dev-db/mongodb-*/temp/build.log` と
+  `genpack bash openssl version` (lower) vs `openssl version` (host) の比較
+- mongodb-7 系から 8 系へ切り出した (2026-11)。切り出しついでに
+  公式基準構成の 8 系へ。7 系時代に必要だった `dev-python/pkg-resources` の先行導入
+  (buildtime_packages_first) は 8 系が `dev-python/packaging` を BDEPEND に持つため廃止した。
+  過去の問題として: 7.0.28 の SConstruct が `from pkg_resources import parse_version` を使うのに
+  ebuild の BDEPEND が宣言しておらず (setuptools 81 で pkg_resources が別パッケージへ分離)、
+  無いと `ModuleNotFoundError: No module named 'pkg_resources'` で compile が落ちた
 - `npm prune --omit=dev` で実行時依存が欠ける場合は prune を外す (node_modules は 2GiB 前後)
 - `ADMIN_PANEL_URL` の有効化は運用方針次第 (`.env` でコメント解除)。設定時は
   `ADMIN_PANEL_SESSION_SECRET` も設定する
 - `librechat` ユーザーのシェルは `/bin/bash` (設定編集・サービス再起動をこのユーザーで行う運用)。
   root 編集厳格運用なら `nologin` に変える
-- 版本は Portage 安定版優先。mongodb は `=dev-db/mongodb-7*` でピン留めしている
+- 版本は Portage 安定版優先。mongodb は `=dev-db/mongodb-8*` でピン留めしている
+  (キーワード stable 選択で 8.0.29 が当たり、`~amd64` の 8.0.34 / 8.3 系は自然に除外される)
 - exec-guard の有効確認は `/var/log/genpack-init.log` の `exec_guard: active.` 行、または
   `/sys/fs/bpf/exec_guard/` にリンクがあるか。ブロックログは
   `ausearch -k exec_guard_deny --input-logs`。無効化は boot パーティションの `system.ini` に

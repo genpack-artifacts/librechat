@@ -10,10 +10,13 @@
         // LibreChat の package.json に engines 制限はなく node 26 系で検証済み。
         "net-libs/nodejs",
 
-        // LibreChat の唯一の必須外部サービス。7 系は amd64 安定 (8 系は ~amd64 で
-        // accept_keywords 追加要)。ebuild が mongodb.service を同梱し、
-        // acct-user/acct-group/mongodb を RDEPEND に持つ。
-        "=dev-db/mongodb-7*",
+        // LibreChat の必須外部サービス。v0.8.8 の公式 docker-compose が mongo:8.0 を載せるのが
+        // 基準構成で、mongoose 8 / mongodb driver 6 系は 8.0 サーバーを完全サポート (制約なし)。
+        // 8.0.29 は amd64 安定 (8.0.34 / 8.3 系は ~amd64 なのでキーワードstable選択で自動除外)。
+        // ebuild が mongodb.service を同梱し、acct-user/acct-group/mongodb を RDEPEND に持つ。
+        // 7 系データ (FCV 7.0) への被せは 7.0 → 8.0 が公式の直接 upgrade path なので起動する。
+        // FCV 引き上げは不要 (8.0 バイナリが FCV 7.0 のまま動く)。
+        "=dev-db/mongodb-8*",
 
         // librechat ユーザーに NOPASSWD でサービス再起動をさせる (files/etc/sudoers.d)。
         // genpack/base プロファイルには含まれないので明示的に立てる。
@@ -32,17 +35,9 @@
         "dev-lang/python",
     ],
 
-    buildtime_packages: [
-        // mongodb-7.0.28 の SConstruct が "from pkg_resources import parse_version" を使うが
-        // ebuild の BDEPEND に入っていない (setuptools 81 で pkg_resources が別パッケージに分離)。
-        // 8 系は dev-python/packaging を BDEPEND に持つのでこの問題は出ない。
-        "dev-python/pkg-resources",
-    ],
-
-    // 上の pkg-resources は mongodb にとって宣言依存ではないため、一括 emerge では
-    // mongodb の compile に間に合わない (ADR-0003 の clang-kernel と同型の問題)。
-    // @genpack-buildtime を先行パスで焼いてからメイン emerge に入る。
-    buildtime_packages_first: true,
+    // (廃止) mongodb-7.0.28 は SConstruct が `from pkg_resources import parse_version` を使うのに
+    // ebuild の BDEPEND が pkg-resources を宣言せず、dev-python/pkg-resources の先行導入が要った
+    // (buildtime_packages_first)。mongodb-8 系は dev-python/packaging を BDEPEND に持つので不要。
 
     // ref: exec-guard
     // overlayfs upper layer に持ち込まれた ELF バイナリ・共有ライブラリの実行を eBPF LSM でブロック。
@@ -54,11 +49,6 @@
     },
 
     accept_keywords: {
-        ">=net-libs/nodejs-26.12.1": null,
-        ">=app-arch/brotli-1.2.1": null,
-        ">=dev-cpp/simdutf-9.2.1": null,
-        ">=dev-libs/simdjson-5.0.3": null,
-        ">=dev-libs/openssl-3.5.9": null,
     },
 
     license: {
@@ -68,7 +58,7 @@
 
     arch: {
         aarch64: {
-            // mongodb 7 系は arm64 で ~arch (amd64 のみ安定)
+            // mongodb は arm64 で全て ~arch (8.0.29 で amd64 のみ安定)
             accept_keywords: {
                 "dev-db/mongodb": null,
             },
@@ -87,5 +77,5 @@
         { name: "meilisearch", uid: 1001, home: "/var/lib/meilisearch", shell: "/sbin/nologin", create_home: false },
     ],
 
-    services: ["mongodb", "meilisearch", "librechat"],
+    services: ["mongodb", "meilisearch", "librechat","vsock-export@3080.socket"],
 }
